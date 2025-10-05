@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Currency Converter Agent</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    {% set session_controls = true %}
+    {% include 'sub/sidebar.html' %}
+
+    <!-- Main Content Area -->
+    <div class="main-content" id="mainContent">
+        <div class="header">
+            <div class="header-content">
+                <button class="mobile-menu-btn" id="mobileMenuBtn" onclick="toggleSidebar()">
+                    <span class="hamburger"></span>
+                    <span class="hamburger"></span>
+                    <span class="hamburger"></span>
+                </button>
+                <div class="header-title">
+                    <h1>Conversational Mode</h1>
+                  <!--  <p>Ask questions about your CSV data in natural language. I remember our conversation!</p> -->
+                </div>
+            </div>
+        </div>
+
+
+        <div class="chat-container">
+            <div class="messages" id="messages">
+                <div class="message assistant">
+                    <div class="message-avatar">AI</div>
+                    <div class="message-content">
+                        <p>Hello! I'm your conversational Currency Converter assistant.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="input-container">
+            <form class="input-form" id="queryForm">
+                <textarea class="input-field" id="queryInput" placeholder="Enter country name or conversion request (e.g., 'convert 100 USD to EUR')..." rows="3"
+                    required></textarea>
+                <button type="submit" class="send-btn" id="sendBtn">Send</button>
+            </form>
+        </div>
+
+        <script>
+            const messagesContainer = document.getElementById('messages');
+            const queryForm = document.getElementById('queryForm');
+            const queryInput = document.getElementById('queryInput');
+            const sendBtn = document.getElementById('sendBtn');
+
+            function addMessage(content, isUser = false) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${isUser ? 'user' : 'assistant'}`;
+
+                const avatar = document.createElement('div');
+                avatar.className = 'message-avatar';
+                avatar.textContent = isUser ? 'U' : 'AI';
+
+                const messageContent = document.createElement('div');
+                messageContent.className = 'message-content';
+
+                if (isUser) {
+                    const formattedContent = content.replace(/\n/g, '<br>');
+                    messageContent.innerHTML = formattedContent;
+                } else {
+                    messageContent.innerHTML = content;
+                }
+
+                messageDiv.appendChild(avatar);
+                messageDiv.appendChild(messageContent);
+                messagesContainer.appendChild(messageDiv);
+
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+                return messageDiv;
+            }
+
+            function addLoadingMessage() {
+                const loadingContent = '<div class="loading">Processing your request...</div>';
+                addMessage(loadingContent);
+                return messagesContainer.lastElementChild;
+            }
+
+            async function chatWithAgent(query) {
+                const formData = new FormData();
+                formData.append('user_input', query);
+
+                const response = await fetch('/convert', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                return await response.json();
+            }
+
+            window.userQueries = {};
+            let messageCounter = 0;
+            let currentSessionId = 'default';
+
+            window.clearConversation = async function () {
+                try {
+                    const response = await fetch(`/conversation/${currentSessionId}/clear`, {
+                        method: 'POST'
+                    });
+
+                    if (response.ok) {
+                        const messages = document.querySelectorAll('.message:not(.assistant):not(:first-child)');
+                        messages.forEach(msg => msg.remove());
+
+                        messageCounter = 0;
+                        window.userQueries = {};
+
+                        addMessage('<p>Conversation history cleared. You can start fresh!</p>');
+                    }
+                } catch (error) {
+                    addMessage(`<div class="error-message">Error clearing conversation: ${error.message}</div>`);
+                }
+            };
+
+            window.newSession = function () {
+                currentSessionId = 'session_' + Date.now();
+                document.getElementById('sessionId').textContent = currentSessionId;
+
+                const messages = document.querySelectorAll('.message:not(.assistant):not(:first-child)');
+                messages.forEach(msg => msg.remove());
+
+                messageCounter = 0;
+                window.userQueries = {};
+
+                addMessage('<p>New conversation session started! I\'m ready for your questions.</p>');
+            };
+
+            async function handleQuerySubmission(e) {
+                e.preventDefault();
+                const query = queryInput.value.trim();
+                if (!query) return;
+
+                addMessage(query, true);
+                queryInput.value = '';
+                sendBtn.disabled = true;
+
+                const loadingMsg = addLoadingMessage();
+
+                try {
+                    const result = await chatWithAgent(query);
+                    messagesContainer.removeChild(loadingMsg);
+
+                    const messageId = ++messageCounter;
+                    window.userQueries[messageId] = query;
+
+                    const assistantMsg = addMessage(result.response);
+                    assistantMsg.setAttribute('data-message-id', messageId);
+
+                } catch (error) {
+                    messagesContainer.removeChild(loadingMsg);
+                    addMessage(`<div class="error-message">Error: ${error.message}</div>`);
+                } finally {
+                    sendBtn.disabled = false;
+                    queryInput.focus();
+                }
+            }
+
+            queryForm.addEventListener('submit', handleQuerySubmission);
+
+            queryInput.addEventListener('keydown', async function (e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    handleQuerySubmission(e);
+                }
+            });
+
+            queryInput.focus();
+        </script>
+
+        {% include 'sub/sidebar_js.html' %}
+    </div>
+</body>
+
+</html>
